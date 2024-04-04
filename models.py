@@ -3,6 +3,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from copy import deepcopy
 torch.manual_seed(0)
 
+#TODO: Implement shared head
+
 # parameter initionalisations
 def weight_parameter(shape, init_weights=None):
     if init_weights is not None:
@@ -24,6 +26,7 @@ def KL_of_gaussians(q_mean, q_logvar, p_mean, p_logvar):
 
 class NN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim, n_train_samples):
+        super().__init__()
         self.input_dim = input_dim
         self.hidden_dims = hidden_dims
         self.output_dim = output_dim
@@ -52,20 +55,18 @@ class NN(torch.nn.Module):
                 #print truncated loss
                 print(f'Epoch {epoch} Loss: {epoch_loss:.4f}')
         return losses
+    
     def get_parameters(self):
         return self.params
-    
-    """def predict(self, X_test, task_id):
-        return self._predict(X_test, task_id).detach().numpy()
-    def predict_prob(self, X_test, task_id):
-        return torch.nn.functional.softmax(self._predict(X_test, task_id), dim=1).detach().numpy()
-"""
+        
+    def predict(self, inputs, task_id):
+        raise NotImplementedError
 
 class MLP(NN):
     def __init__(self, input_dim, hidden_dims, output_dim, n_train_samples, lr=0.001):
         super().__init__(input_dim, hidden_dims, output_dim, n_train_samples)
         self.weights, self.biases, self.weights_last, self.biases_last = self.init_weights()
-        self.params = [self.weights, self.biases, self.weights_last, self.biases_last]
+        self.params = [[self.weights, self.biases, self.weights_last, self.biases_last], None]
 
     def predict(self, inputs, task_id):
         activations = inputs
@@ -74,8 +75,11 @@ class MLP(NN):
             biases = self.biases[i]
             raw_activations = torch.matmul(activations, weights) + biases
             activations = torch.relu(raw_activations)
-        logits = torch.matmul(activations, self.weights_last[0]) + self.biases_last[0]
+        logits = torch.matmul(activations, self.weights_last[task_id]) + self.biases_last[task_id]
         return logits
+
+    def predict_proba(self, X_test, task_id):
+        return torch.nn.functional.softmax(self.predict(X_test, task_id), dim=1)
     
     def loss_fn(self, logits, labels):
         return torch.nn.functional.cross_entropy(logits, labels)
@@ -123,19 +127,27 @@ class BNN(NN):
         
 
     def calculate_loss(self, x_batch, y_batch, task_id):
-        kl_term = self._KL_term()
-        pred = self._predict(x_batch, task_id)
+        kl_term = self.KL_term()
+        pred = self.predict(x_batch, task_id)
         likelihood_term = -torch.mean(torch.nn.functional.log_softmax(pred, dim=1)[range(len(y_batch)), y_batch])
         return kl_term + likelihood_term
+    
+    def predict(self, inputs, task_id):
+        return self._predict(inputs, task_id, self.n_pred_samples)
+    
+    def predict_proba(self, X_test, task_id):
+        #TODO: Check if the dim is correct
+        return torch.nn.functional.softmax(self.predict(X_test, task_id), dim=1)
+    
 
-    def _predict(self, inputs, task_id, n_pred_samples):
+    def _predict(self, inputs, task_id, n_samples):
         expanded_inputs = inputs.unsqueeze(0) #size: 1 x batch_size x input_dim = 1 x 64 x 784
-        activations = expanded_inputs.repeat(n_pred_samples, 1, 1) #size: n_pred_samples x batch_size x input_dim = 100 x 64 x 784
+        activations = expanded_inputs.repeat(n_samples, 1, 1) #size: n_pred_samples x batch_size x input_dim = 100 x 64 x 784
         for i in range(self.n_layers - 1):
             input_dim = self.layer_dims(i)
             output_dim = self.layer_dims(i+1)
-            weight_epsilon = torch.randn(n_pred_samples, input_dim, output_dim) #size: n_pred_samples x input_dim x output_dim
-            bias_epsilon = torch.randn(n_pred_samples, 1, output_dim) #size: n_pred_samples x 1 x output_dim
+            weight_epsilon = torch.randn(n_samples, input_dim, output_dim) #size: n_pred_samples x input_dim x output_dim
+            bias_epsilon = torch.randn(n_samples, 1, output_dim) #size: n_pred_samples x 1 x output_dim
             #we use * 0.5 for the reparameterisation trick: taking the square root of the variance is the std
             weights = weight_epsilon * torch.exp(0.5 * self.weight_variances[i]) + self.weight_means[i] #size: TODO:(?) n_pred_samples x batch_size x output_dim 
             biases = bias_epsilon * torch.exp(0.5 * self.bias_variances[i]) + self.bias_means[i]
@@ -143,8 +155,8 @@ class BNN(NN):
             activations = torch.relu(raw_activations) 
         input_dim = self.layer_dims(-2)
         output_dim = self.layer_dims(-1)
-        weight_epsilon = torch.randn(n_pred_samples, input_dim, output_dim)
-        bias_epsilon = torch.randn(n_pred_samples, 1, output_dim)
+        weight_epsilon = torch.randn(n_samples, input_dim, output_dim)
+        bias_epsilon = torch.randn(n_samples, 1, output_dim)
 
         weights = weight_epsilon * torch.exp(0.5 * self.weight_last_variances[task_id]) + self.weight_last_means[task_id]
         biases = bias_epsilon * torch.exp(0.5 * self.bias_last_variances[task_id]) + self.bias_last_means[task_id]

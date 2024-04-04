@@ -1,10 +1,15 @@
 import torchvision
 import torch
+from torchvision import transforms
 
 class SplitMnist():
     def __init__(self):
-        mnist_train = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=None)
-        mnist_test = torchvision.datasets.MNIST(root='./data', train=False, download=True, transform=None)
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,))
+        ])
+        mnist_train = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+        mnist_test = torchvision.datasets.MNIST(root='./data', train=False, download=True, transform=transform)
 
         self.X_train = torch.cat([img.unsqueeze(0) for img, _ in mnist_train], dim=0).view(-1, 784).float()
         self.X_test = torch.cat([img.unsqueeze(0) for img, _ in mnist_test], dim=0).view(-1, 784).float()
@@ -20,7 +25,7 @@ class SplitMnist():
         # Return the number of features and number of classes
         return 784, 2
 
-    def get_task(self):
+    def next_task(self):
         if self.current_task >= self.n_tasks:
             raise Exception('All tasks completed already')
         else:

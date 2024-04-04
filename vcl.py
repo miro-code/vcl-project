@@ -3,36 +3,70 @@ import torch
 import utils
 from models import MLP, BNN
 
-def run_vcl(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, batch_size=264, single_head=True):
+
+def get_results(model, X_test_by_task, y_test_by_task, X_cs_by_task, y_cs_by_task, hidden_size, n_epochs, shared_head, batch_size):
+    #takes the model, trains it on the coreset data and returns the accuracy
+
+    parameter_means, parameter_variances = model.get_parameters()
+    
+    accuracies = []
+
+    if shared_head:
+        if X_cs_by_task:
+            X_train = torch.cat(X_cs_by_task, dim=0)
+            y_train = torch.cat(y_cs_by_task, dim=0)
+            final_model = BNN(X_train.shape[1], hidden_size, y_train.shape[1], X_train.shape[0], previous_means=parameter_means, prev_log_variances=parameter_variances)
+            final_model.train(X_train, y_train, 0, n_epochs, batch_size)
+        else:
+            final_model = model
+    else:
+        final_models = []
+        for i in range(len(X_test_by_task)):
+            if X_cs_by_task:
+                X_train, y_train = X_cs_by_task[i], y_cs_by_task[i]
+                final_model = BNN(X_train.shape[1], hidden_size, y_train.shape[1], X_train.shape[0], previous_means=parameter_means, prev_log_variances=parameter_variances)
+                final_model.train(X_train, y_train, i, n_epochs, batch_size)
+            else:
+                final_model = model
+
+    for i in range(len(X_test_by_task)):
+        final_model = final_models[i] if not shared_head else final_model
+        head = 0 if shared_head else i
+        x_test, y_test = X_test_by_task[i], y_test_by_task[i]
+        predictions = final_model.predict_proba(x_test, head)
+        prediction_mean = torch.mean(predictions, axis=0)
+        prediction = torch.argmax(prediction_mean, axis=1)
+        y = torch.argmax(y_test, axis=1)
+        accuracy = torch.sum(prediction == y).item() / y.shape[0]
+        accuracies.append(accuracy)
+    return accuracies
+
+def run_vcl(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, batch_size=264, shared_head=True):
     input_dim, out_dim = data_class.get_dims()
-    task_accuracies = np.array([])
-    X_test_by_task, t_test_by_task = [], []
-    X_coresets, y_coresets = [], []
+    task_accuracies = torch.tensor([])
+    X_test_by_task, y_test_by_task = [], []
+    X_cs_by_task, y_cs_by_task = [], []
     
     for task_id in range(data_class.n_tasks):
         X_train, y_train, X_test, y_test = data_class.next_task()
         X_test_by_task.append(X_test)
-        t_test_by_task.append(y_test)
+        y_test_by_task.append(y_test)
 
-        head = 0 if single_head else task_id
+        head = 0 if shared_head else task_id
 
         # Train first network with maximum likelihood=SGD (It seems strange not to use VI here but it is what the original code does)
         if task_id == 0:
-            ml_model = MLP(input_dim, hidden_dims, out_dim, X_train.shape[0])
-            ml_model.train(X_train, y_train, task_id, n_epochs, batch_size)
-            mf_weights = ml_model.get_weights()
-            mf_variances = None
-            ml_model.close_session()
+            mlp = MLP(input_dim, hidden_dims, out_dim, X_train.shape[0])
+            mlp.train(X_train, y_train, task_id, n_epochs, batch_size)
+            parameter_means, parameter_variances = mlp.get_parameters()
+        
         if coreset_size > 0:
-            X_coresets, y_coresets, X_train, y_train = coreset_func(X_coresets, y_coresets, X_train, y_train, coreset_size)
-        mf_model = BNN(input_dim, hidden_dims, out_dim, X_train.shape[0], prev_means=mf_weights, prev_log_variances=mf_variances)
-        mf_model.train(X_train, y_train, head, n_epochs, batch_size)
-        mf_weights, mf_variances = mf_model.get_weights()
+            X_cs_by_task, y_cs_by_task, X_train, y_train = coreset_func(X_cs_by_task, y_cs_by_task, X_train, y_train, coreset_size)
+        bnn = BNN(input_dim, hidden_dims, out_dim, X_train.shape[0], previous_means=parameter_means, prev_log_variances=parameter_variances)
+        bnn.train(X_train, y_train, head, n_epochs, batch_size)
+        parameter_means, parameter_variances = bnn.get_parameters()
 
         # Incorporate coreset data and make prediction
-        accuracy = utils.get_scores(mf_model, X_test_by_task, t_test_by_task, X_coresets, y_coresets, hidden_dims, n_epochs, single_head, batch_size)
-        task_accuracies = utils.concatenate_results(accuracy, task_accuracies)
-
-        mf_model.close_session()
-
+        accuracy = get_results(bnn, X_test_by_task, y_test_by_task, X_cs_by_task, y_cs_by_task, hidden_dims, n_epochs, shared_head, batch_size)
+        task_accuracies = torch.cat((task_accuracies, accuracy.view(1, -1)), dim=0) if task_accuracies.size(0) != 0 else accuracy.view(1, -1)
     return task_accuracies
