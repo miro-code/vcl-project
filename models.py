@@ -19,6 +19,9 @@ def small_parameter(shape):
     initial = torch.ones(shape) * -6.0
     return torch.nn.Parameter(initial)
 
+def KL_of_gaussians(q_mean, q_logvar, p_mean, p_logvar):
+    return 0.5 * (p_logvar - q_logvar + (torch.exp(q_logvar) + (q_mean - p_mean)**2) / torch.exp(p_logvar) - 1)
+
 class NN(torch.nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim, n_train_samples):
         self.input_dim = input_dim
@@ -40,7 +43,7 @@ class NN(torch.nn.Module):
             epoch_loss = 0
             for X_batch, y_batch in dataloader:
                 self.optimizer.zero_grad()
-                loss = self.loss_fn(X_batch, y_batch, task_id)
+                loss = self.calculate_loss(X_batch, y_batch, task_id)
                 loss.backward()
                 self.optimizer.step()
                 epoch_loss += loss.item()
@@ -49,134 +52,233 @@ class NN(torch.nn.Module):
                 #print truncated loss
                 print(f'Epoch {epoch} Loss: {epoch_loss:.4f}')
         return losses
-    def get_weights(self):
-        return [param.detach().numpy() for param in self.parameters()]
+    def get_parameters(self):
+        return self.params
     
-    def predict(self, X_test, task_id):
+    """def predict(self, X_test, task_id):
         return self._predict(X_test, task_id).detach().numpy()
     def predict_prob(self, X_test, task_id):
         return torch.nn.functional.softmax(self._predict(X_test, task_id), dim=1).detach().numpy()
+"""
 
-    
-
-
-class Vanilla_NN(NN):
-    def __init__(self, input_dim, hidden_dims, output_dim, n_train_samples, prev_weights=None, learning_rate=0.001):
+class MLP(NN):
+    def __init__(self, input_dim, hidden_dims, output_dim, n_train_samples, lr=0.001):
         super().__init__(input_dim, hidden_dims, output_dim, n_train_samples)
-        self.weights = self.create_weights(prev_weights)
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
+        self.weights, self.biases, self.weights_last, self.biases_last = self.init_weights()
+        self.params = [self.weights, self.biases, self.weights_last, self.biases_last]
 
-    def loss_fn(self, x_batch, y_batch, task_id):
-        pred = self._predict(x_batch, task_id)
-        return -torch.mean(torch.nn.functional.log_softmax(pred, dim=1)[range(len(y_batch)), y_batch])
-
-    def _predict(self, inputs, task_id):
-        act = inputs
+    def predict(self, inputs, task_id):
+        activations = inputs
         for i in range(len(self.hidden_dims)):
-            pre = torch.matmul(act, self.weights[i][0]) + self.weights[i][1]
-            act = torch.relu(pre)
-        pre = torch.matmul(act, self.weights[-1][0][task_id]) + self.weights[-1][1][task_id]
-        return pre
+            weights = self.weights[i]
+            biases = self.biases[i]
+            raw_activations = torch.matmul(activations, weights) + biases
+            activations = torch.relu(raw_activations)
+        logits = torch.matmul(activations, self.weights_last[0]) + self.biases_last[0]
+        return logits
+    
+    def loss_fn(self, logits, labels):
+        return torch.nn.functional.cross_entropy(logits, labels)
 
-    def create_weights(self, prev_weights):
+    def init_weights(self):
+        self.layer_dims = deepcopy(self.hidden_dims)
+        self.layer_dims.append(self.output_dim)
+        self.layer_dims.insert(0, self.input_dim)
+        n_layers = len(self.layer_dims) - 1
+        
         weights = []
-        for i, size in enumerate([self.input_dim] + self.hidden_dims):
-            if prev_weights is not None:
-                weight = [torch.tensor(w) for w in prev_weights[i]]
-            else:
-                weight = [weight_parameter((size, self.hidden_dims[i]), init_weights=None),
-                          bias_parameter((self.hidden_dims[i],))]
-            weights.append(weight)
-        weights[-1].append([weight_parameter((self.hidden_dims[-1], self.output_dim), init_weights=None) for _ in range(self.output_dim)])
-        weights[-1].append([bias_parameter((self.output_dim,)) for _ in range(self.output_dim)])
-        return weights
+        biases = []
+        weights_last = [] #note that this only ever has one element we extend it for BNNs later
+        biases_last = []
 
-class MFVI_NN(NN):
-    def __init__(self, input_dim, hidden_dims, output_dim, n_train_samples, prev_means=None, prev_log_variances=None, learning_rate=0.001, prior_mean=0, prior_var=1):
+        #Iterate over layers except the last
+        for i in range(n_layers - 1):
+            weights.append([weight_parameter((self.layer_dims[i], self.layer_dims[i+1]))])
+            biases.append([bias_parameter((self.layer_dims[i+1],))])
+        #Last layer
+        weights_last.append(weight_parameter((self.layer_dims[-2], self.layer_dims[-1])))
+        biases_last.append(bias_parameter((self.layer_dims[-1],)))
+        
+        return weights, biases, weights_last, biases_last
 
+class BNN(NN):
+    def __init__(self, input_dim, hidden_dims, output_dim, n_train_samples, n_pred_samples = 100, previous_means=None, previous_log_variances=None, lr=0.001, prior_mean=0, prior_var=1):
+        #previous means is supplied as [weight_means, bias_means, weight_last_means, bias_last_means]
+        #previous log variances is supplied equivalently
+        #Note that variances are provided as log(variances)
         super().__init__(input_dim, hidden_dims, output_dim, n_train_samples)
-        self.weights, self.variances = self.create_weights(prev_means, prev_log_variances)
-        self.prior_weights, self.prior_variances = self.create_prior(prev_means, prev_log_variances, prior_mean, prior_var)
-        self.optimizer = torch.optim.Adam(self.parameters(), lr=learning_rate)
+        means, variances = self.init_weights(previous_means, previous_log_variances)
+        self.weight_means, self.bias_means, self.weight_last_means, self.bias_last_means = means
+        self.weight_variances, self.bias_variances, self.weight_last_variances, self.bias_last_variances = variances
+        self.params = [means, variances]
 
-    def loss_fn(self, x_batch, y_batch, task_id):
+        means, variances = self.create_prior(previous_means, previous_log_variances, prior_mean, prior_var) 
+        self.prior_weight_means, self.prior_bias_means, self.prior_weight_last_means, self.prior_bias_last_means = means
+        self.prior_weight_variances, self.prior_bias_variances, self.prior_weight_last_variances, self.prior_bias_last_variances = variances
+
+        self.n_layers = len(self.layer_dims) - 1
+        self.n_train_samples = n_train_samples
+        self.n_pred_samples = n_pred_samples
+
+        
+
+    def calculate_loss(self, x_batch, y_batch, task_id):
         kl_term = self._KL_term()
         pred = self._predict(x_batch, task_id)
         likelihood_term = -torch.mean(torch.nn.functional.log_softmax(pred, dim=1)[range(len(y_batch)), y_batch])
         return kl_term + likelihood_term
 
-    def _predict(self, inputs, task_id):
-        return self._predict_layer(inputs, task_id)
+    def _predict(self, inputs, task_id, n_pred_samples):
+        expanded_inputs = inputs.unsqueeze(0) #size: 1 x batch_size x input_dim = 1 x 64 x 784
+        activations = expanded_inputs.repeat(n_pred_samples, 1, 1) #size: n_pred_samples x batch_size x input_dim = 100 x 64 x 784
+        for i in range(self.n_layers - 1):
+            input_dim = self.layer_dims(i)
+            output_dim = self.layer_dims(i+1)
+            weight_epsilon = torch.randn(n_pred_samples, input_dim, output_dim) #size: n_pred_samples x input_dim x output_dim
+            bias_epsilon = torch.randn(n_pred_samples, 1, output_dim) #size: n_pred_samples x 1 x output_dim
+            #we use * 0.5 for the reparameterisation trick: taking the square root of the variance is the std
+            weights = weight_epsilon * torch.exp(0.5 * self.weight_variances[i]) + self.weight_means[i] #size: TODO:(?) n_pred_samples x batch_size x output_dim 
+            biases = bias_epsilon * torch.exp(0.5 * self.bias_variances[i]) + self.bias_means[i]
+            raw_activations = torch.matmul(activations, weights) + biases 
+            activations = torch.relu(raw_activations) 
+        input_dim = self.layer_dims(-2)
+        output_dim = self.layer_dims(-1)
+        weight_epsilon = torch.randn(n_pred_samples, input_dim, output_dim)
+        bias_epsilon = torch.randn(n_pred_samples, 1, output_dim)
 
-    def _predict_layer(self, inputs, task_id):
-        act = inputs
-        for i in range(len(self.hidden_dims)):
-            eps_w = torch.randn(self.weights[i][0].shape)
-            eps_b = torch.randn(self.weights[i][1].shape)
-            weights = eps_w * torch.exp(0.5 * self.variances[i][0]) + self.weights[i][0]
-            biases = eps_b * torch.exp(0.5 * self.variances[i][1]) + self.weights[i][1]
-            pre = torch.matmul(act, weights) + biases
-            act = torch.relu(pre)
-        eps_w = torch.randn(self.weights[-1][0][task_id].shape)
-        eps_b = torch.randn(self.weights[-1][1][task_id].shape)
-        weights = eps_w * torch.exp(0.5 * self.variances[-1][0][task_id]) + self.weights[-1][0][task_id]
-        biases = eps_b * torch.exp(0.5 * self.variances[-1][1][task_id]) + self.weights[-1][1][task_id]
-        return torch.matmul(act, weights) + biases
+        weights = weight_epsilon * torch.exp(0.5 * self.weight_last_variances[task_id]) + self.weight_last_means[task_id]
+        biases = bias_epsilon * torch.exp(0.5 * self.bias_last_variances[task_id]) + self.bias_last_means[task_id]
+        #TODO: from the original code; check if this is correct 
+        activations = activations.unsqueeze(3)
+        weights = weights.unsqueeze(1)
+        logits = torch.sum(activations * weights, dim=2) + biases
+        return logits
 
-    def _KL_term(self):
-        kl = 0
-        for i in range(len(self.hidden_dims)):
-            kl += self._compute_layer_KL_term(self.weights[i], self.variances[i], self.prior_weights[i], self.prior_variances[i])
+    def log_likelihood_loss(self, inputs, targets, task_id):
+        prediction = self._predict(inputs, task_id, self.n_train_samples) #TODO: Why is this n_train_samples?
+        targets = targets.unsqueeze(0).repeat(self.n_train_samples, 1, 1)
+        log_likelihood = torch.nn.functional.cross_entropy(prediction, targets)
+        return log_likelihood
 
-        no_tasks = len(self.weights[-1][0])
-        for i in range(no_tasks):
-            kl += self._compute_layer_KL_term(self.weights[-1], self.variances[-1], self.prior_weights[-1][i], self.prior_variances[-1][i])
+    def KL_loss(self):
+        loss = 0
+        for i in range(self.n_layers - 1):
+            loss += torch.sum(KL_of_gaussians(self.weight_means[i], self.weight_variances[i], self.prior_weight_means[i], self.prior_weight_variances[i]))
+            loss += torch.sum(KL_of_gaussians(self.bias_means[i], self.bias_variances[i], self.prior_bias_means[i], self.prior_bias_variances[i]))
+        loss += torch.sum(KL_of_gaussians(self.weight_last_means[0], self.weight_last_variances[0], self.prior_weight_last_means[0], self.prior_weight_last_variances[0]))
+        loss += torch.sum(KL_of_gaussians(self.bias_last_means[0], self.bias_last_variances[0], self.prior_bias_last_means[0], self.prior_bias_last_variances[0]))
+        return loss
 
-        return kl
+    def init_weights(self, previous_means, previous_log_variances):
+        #previous means is supplied as [weight_means, bias_means, weight_last_means, bias_last_means]
+        #previous log variances is supplied equivalently
+        
+        #Note that the first task is trained to ML so there will be no variance but means.
 
-    def _compute_layer_KL_term(self, weights, variances, prior_weights, prior_variances):
-        m, v = weights
-        m0, v0 = prior_weights
-        kl = -0.5 * m.numel()
-        kl += 0.5 * torch.sum(torch.log(v0) - v)
-        kl += 0.5 * torch.sum((torch.exp(v) + (m0 - m)**2) / v0)
-        return kl
+        weight_means = []
+        bias_means = []
+        weight_last_means = []
+        bias_last_means = []
 
-    def create_weights(self, prev_means, prev_log_variances):
-        weights = []
-        variances = []
-        for i, size in enumerate([self.input_dim] + self.hidden_dims):
-            if prev_means is not None and prev_log_variances is not None:
-                weight = [torch.tensor(w) for w in prev_means[i]]
-                variance = [torch.tensor(w) for w in prev_log_variances[i]]
+        weight_variances = []
+        bias_variances = []
+        weight_last_variances = []
+        bias_last_variances = []
+
+        self.layer_dims = deepcopy(self.hidden_dims)
+        self.layer_dims.append(self.output_dim)
+        self.layer_dims.insert(0, self.input_dim)
+        n_layers = len(self.layer_dims) - 1
+        
+        for i in range(n_layers - 1):
+            if previous_means is None:
+                weight_mean = weight_parameter((self.layer_dims[i], self.layer_dims[i+1]))
+                bias_mean = bias_parameter((self.layer_dims[i+1],))
+                weight_variance = small_parameter((self.layer_dims[i], self.layer_dims[i+1])) 
+                bias_variance = small_parameter((self.layer_dims[i+1],))
             else:
-                weight = [weight_parameter((size, self.hidden_dims[i]), init_weights=None),
-                          bias_parameter((self.hidden_dims[i],))]
-                variance = [small_parameter((size, self.hidden_dims[i])),
-                            small_parameter((self.hidden_dims[i],))]
-            weights.append(weight)
-            variances.append(variance)
-        weights[-1][0].append([weight_parameter((self.hidden_dims[-1], self.output_dim), init_weights=None) for _ in range(self.output_dim)])
-        weights[-1][1].append([bias_parameter((self.output_dim,)) for _ in range(self.output_dim)])
-        variances[-1][0].append([small_parameter((self.hidden_dims[-1], self.output_dim)) for _ in range(self.output_dim)])
-        variances[-1][1].append([small_parameter((self.output_dim,)) for _ in range(self.output_dim)])
-        return weights, variances
+                weight_mean = torch.nn.Parameter(previous_means[0][i])
+                bias_mean = torch.nn.Parameter(previous_means[1][i])
+                if(previous_log_variances is None):
+                    weight_variance = small_parameter((self.layer_dims[i], self.layer_dims[i+1]))
+                    bias_variance = small_parameter((self.layer_dims[i+1],))
+                else:
+                    weight_variance = torch.nn.Parameter(previous_log_variances[0][i])
+                    bias_variance = torch.nn.Parameter(previous_log_variances[1][i])
+            weight_means.append(weight_mean)
+            bias_means.append(bias_mean)
+            weight_variances.append(weight_variance)
+            bias_variances.append(bias_variance)
+        
+        if(previous_log_variances is not None and previous_means is not None):
+            previous_weight_last_means = torch.tensor(previous_means[2])
+            previous_bias_last_means = torch.tensor(previous_means[3])
+            previous_weight_last_variances = torch.tensor(previous_log_variances[2])
+            previous_bias_last_variances = torch.tensor(previous_log_variances[3])
+            n_previous_tasks = len(previous_weight_last_means)
+            for i in range(n_previous_tasks):
+                weight_last_means.append(torch.nn.Parameter(previous_weight_last_means[i]))
+                bias_last_means.append(torch.nn.Parameter(previous_bias_last_means[i]))
+                weight_last_variances.append(torch.nn.Parameter(previous_weight_last_variances[i]))
+                bias_last_variances.append(torch.nn.Parameter(previous_bias_last_variances[i]))
+        
+        if(previous_log_variances is None and previous_means is not None):
+            weight_last_means.append(torch.nn.Parameter(previous_means[2][0]))
+            bias_last_means.append(torch.nn.Parameter(previous_means[3][0]))
+        else:
+            weight_last_means.append(weight_parameter((self.layer_dims[-2], self.layer_dims[-1])))
+            bias_last_means.append(bias_parameter((self.layer_dims[-1],)))
+        weight_last_variances.append(small_parameter((self.layer_dims[-2], self.layer_dims[-1])))
+        bias_last_variances.append(small_parameter((self.layer_dims[-1],)))
+        return [weight_means, bias_means, weight_last_means, bias_last_means], [weight_variances, bias_variances, weight_last_variances, bias_last_variances]
 
-    def create_prior(self, prev_means, prev_log_variances, prior_mean, prior_var):
-        prior_weights = []
-        prior_variances = []
-        for i, size in enumerate([self.input_dim] + self.hidden_dims):
-            if prev_means is not None and prev_log_variances is not None:
-                weight = [torch.tensor(w) for w in prev_means[i]]
-                variance = [torch.tensor(w) for w in prev_log_variances[i]]
+    def create_prior(self, previous_means, previous_variances, prior_mean, prior_var):
+        #previous means is supplied as [weight_means, bias_means, weight_last_means, bias_last_means]
+        #previous log variances is supplied equivalently
+        self.layer_dims = deepcopy(self.hidden_dims)
+        self.layer_dims.append(self.output_dim)
+        self.layer_dims.insert(0, self.input_dim)
+        n_layers = len(self.layer_dims) - 1
+        weight_means = []
+        bias_means = []
+        weight_last_means = []
+        bias_last_means = []
+        weight_variances = []
+        bias_variances = []
+        weight_last_variances = []
+        bias_last_variances = []
+        
+        for i in range(n_layers - 1):
+            if(previous_variances is not None and previous_means is not None):
+                weight_mean = torch.nn.Parameter(previous_means[0][i])
+                bias_mean = torch.nn.Parameter(previous_means[1][i])
+                weight_variance = torch.nn.Parameter(previous_variances[0][i])
+                bias_variance = torch.nn.Parameter(previous_variances[1][i])
             else:
-                weight = [torch.tensor(prior_mean) for _ in range(self.hidden_dims[i])],
-                bias = [torch.tensor(prior_mean) for _ in range(self.hidden_dims[i])]
-                variance = ([torch.tensor(prior_var) for _ in range(self.hidden_dims[i])],[torch.tensor(prior_var) for _ in range(self.hidden_dims[i])])
-                prior_weights.append(weight)
-            prior_variances.append(variance)
-        prior_weights[-1][0].append([torch.tensor(prior_mean) for _ in range(self.output_dim)])
-        prior_weights[-1][1].append([torch.tensor(prior_mean) for _ in range(self.output_dim)])
-        prior_variances[-1][0].append([torch.tensor(prior_var) for _ in range(self.output_dim)])
-        prior_variances[-1][1].append([torch.tensor(prior_var) for _ in range(self.output_dim)])
-        return prior_weights, prior_variances
+                weight_mean = torch.nn.Parameter(prior_mean)
+                bias_mean = torch.nn.Parameter(prior_mean)
+                weight_variance = torch.nn.Parameter(prior_var)
+                bias_variance = torch.nn.Parameter(prior_var)
+            weight_means.append(weight_mean)
+            bias_means.append(bias_mean)
+            weight_variances.append(weight_variance)
+            bias_variances.append(bias_variance)
+
+        if(previous_variances is not None and previous_means is not None):
+            previous_weight_last_means = torch.tensor(previous_means[2])
+            previous_bias_last_means = torch.tensor(previous_means[3])
+            previous_weight_last_variances = torch.tensor(previous_variances[2])
+            previous_bias_last_variances = torch.tensor(previous_variances[3])
+            n_previous_tasks = len(previous_weight_last_means)
+            for i in range(n_previous_tasks):
+                weight_last_means.append(torch.tensor(previous_weight_last_means[i]))
+                bias_last_means.append(torch.tensor(previous_bias_last_means[i]))
+                weight_last_variances.append(torch.tensor(previous_weight_last_variances[i]))
+                bias_last_variances.append(torch.tensor(previous_bias_last_variances[i]))
+        else:
+            weight_last_means.append(prior_mean)
+            bias_last_means.append(prior_mean)
+            weight_last_variances.append(prior_var)
+            bias_last_variances.append(prior_var)
+
+        return [weight_means, bias_means, weight_last_means, bias_last_means], [weight_variances, bias_variances, weight_last_variances, bias_last_variances]

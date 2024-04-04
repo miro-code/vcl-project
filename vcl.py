@@ -16,7 +16,7 @@ def run_vcl(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, bat
 
         head = 0 if single_head else task_id
 
-        # Train first network with maximum likelihood=SGD (It seems strange not to use BNN here but it is what the original code does)
+        # Train first network with maximum likelihood=SGD (It seems strange not to use VI here but it is what the original code does)
         if task_id == 0:
             ml_model = MLP(input_dim, hidden_dims, out_dim, X_train.shape[0])
             ml_model.train(X_train, y_train, task_id, n_epochs, batch_size)
