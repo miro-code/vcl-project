@@ -6,15 +6,17 @@ class SplitMnist():
     def __init__(self):
         transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize((0.5,), (0.5,))
+            transforms.Normalize((0.5,), (0.5,)),     
+
         ])
         mnist_train = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
         mnist_test = torchvision.datasets.MNIST(root='./data', train=False, download=True, transform=transform)
 
-        self.X_train = torch.cat([img.unsqueeze(0) for img, _ in mnist_train], dim=0).view(-1, 784).float()
-        self.X_test = torch.cat([img.unsqueeze(0) for img, _ in mnist_test], dim=0).view(-1, 784).float()
-        self.train_label = torch.tensor([label for _, label in mnist_train]).long()
-        self.test_label = torch.tensor([label for _, label in mnist_test]).long()
+        #flatten the image
+        self.X_train = torch.stack([sample[0].view(-1) for sample in mnist_train])
+        self.X_test = torch.stack([sample[0].view(-1) for sample in mnist_test])
+        self.train_label = torch.tensor([sample[1] for sample in mnist_train])
+        self.test_label = torch.tensor([sample[1] for sample in mnist_test])
 
         self.labels_0 = [0, 2, 4, 6, 8]
         self.labels_1 = [1, 3, 5, 7, 9]
@@ -48,4 +50,7 @@ class SplitMnist():
             self.current_task += 1
 
             return X_train, y_train, X_test, y_test
-        
+    
+    def reset(self):
+        self.current_task = 0
+    

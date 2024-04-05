@@ -4,8 +4,9 @@ def random_coreset(X_cs, y_cs, X, y, size):
     ids = torch.randperm(X.size(0))[:size]
     X_cs.append(X[ids])
     y_cs.append(y[ids])
-    X = torch.cat([X[:ids], X[ids+1:]], dim=0)
-    y = torch.cat([y[:ids], y[ids+1:]], dim=0)
+    not_ids = torch.tensor([i for i in range(X.size(0)) if i not in ids])
+    X = torch.index_select(X, 0, not_ids)
+    y = torch.index_select(y, 0, not_ids)
     return X_cs, y_cs, X, y
 
 def k_center(X_cs, y_cs, X, y, size):
