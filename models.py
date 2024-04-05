@@ -27,6 +27,7 @@ def small_parameter(shape):
     return nn.Parameter(initial)
 
 def KL_of_gaussians(q_mean, q_logvar, p_mean, p_logvar):
+    #double checked this it is correct. note: pull the exponent2 out of the log)
     return 0.5 * (p_logvar - q_logvar + (torch.exp(q_logvar) + (q_mean - p_mean)**2) / torch.exp(p_logvar) - 1)
 
 class NN(nn.Module):
@@ -170,19 +171,20 @@ class BNN(NN):
         log_likelihood = nn.functional.cross_entropy(prediction, targets)
         return log_likelihood
 
-    def KL_loss(self):
+    def KL_loss(self, task_id):
+        #For some reason the original code chooses to calculate KL for ALL prediction heads. So all of them are trained towards the prior at which they already are. I will just leave that out for now. 
         loss = 0
         for i in range(self.n_layers - 1):
             loss += torch.sum(KL_of_gaussians(self.weight_means[i], self.weight_variances[i], self.prior_weight_means[i], self.prior_weight_variances[i]))
             loss += torch.sum(KL_of_gaussians(self.bias_means[i], self.bias_variances[i], self.prior_bias_means[i], self.prior_bias_variances[i]))
-        loss += torch.sum(KL_of_gaussians(self.weight_last_means[0], self.weight_last_variances[0], self.prior_weight_last_means[0], self.prior_weight_last_variances[0]))
-        loss += torch.sum(KL_of_gaussians(self.bias_last_means[0], self.bias_last_variances[0], self.prior_bias_last_means[0], self.prior_bias_last_variances[0]))
+        loss += torch.sum(KL_of_gaussians(self.weight_last_means[task_id], self.weight_last_variances[task_id], self.prior_weight_last_means[task_id], self.prior_weight_last_variances[task_id]))
+        loss += torch.sum(KL_of_gaussians(self.bias_last_means[task_id], self.bias_last_variances[task_id], self.prior_bias_last_means[task_id], self.prior_bias_last_variances[task_id]))
         return loss
     
     def calculate_loss(model, inputs, targets, task_id):
         #compute elboloss and regularize KL divergence by scaling with the training size
         log_likelihood_loss = model.log_likelihood_loss(inputs, targets, task_id)
-        kl_loss = model.KL_loss()
+        kl_loss = model.KL_loss(task_id)
         return kl_loss / model.training_size - log_likelihood_loss
 
 
@@ -228,7 +230,7 @@ class BNN(NN):
             bias_variances.append(bias_variance)
         
         if(previous_log_variances is not None and previous_means is not None):
-            previous_weight_last_means =previous_means[2]
+            previous_weight_last_means = previous_means[2]
             previous_bias_last_means = previous_means[3]
             previous_weight_last_variances = previous_log_variances[2]
             previous_bias_last_variances = previous_log_variances[3]
