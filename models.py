@@ -171,20 +171,21 @@ class BNN(NN):
         log_likelihood = nn.functional.cross_entropy(prediction, targets)
         return log_likelihood
 
-    def KL_loss(self, task_id):
+    def KL_loss(self):
         #For some reason the original code chooses to calculate KL for ALL prediction heads. So all of them are trained towards the prior at which they already are. I will just leave that out for now. 
         loss = 0
         for i in range(self.n_layers - 1):
             loss += torch.sum(KL_of_gaussians(self.weight_means[i], self.weight_variances[i], self.prior_weight_means[i], self.prior_weight_variances[i]))
             loss += torch.sum(KL_of_gaussians(self.bias_means[i], self.bias_variances[i], self.prior_bias_means[i], self.prior_bias_variances[i]))
-        loss += torch.sum(KL_of_gaussians(self.weight_last_means[task_id], self.weight_last_variances[task_id], self.prior_weight_last_means[task_id], self.prior_weight_last_variances[task_id]))
-        loss += torch.sum(KL_of_gaussians(self.bias_last_means[task_id], self.bias_last_variances[task_id], self.prior_bias_last_means[task_id], self.prior_bias_last_variances[task_id]))
+        
+        loss += torch.sum(KL_of_gaussians(self.weight_last_means[-1], self.weight_last_variances[-1], self.prior_weight_last_means[-1], self.prior_weight_last_variances[-1]))
+        loss += torch.sum(KL_of_gaussians(self.bias_last_means[-1], self.bias_last_variances[-1], self.prior_bias_last_means[-1], self.prior_bias_last_variances[-1]))
         return loss
     
     def calculate_loss(model, inputs, targets, task_id):
         #compute elboloss and regularize KL divergence by scaling with the training size
         log_likelihood_loss = model.log_likelihood_loss(inputs, targets, task_id)
-        kl_loss = model.KL_loss(task_id)
+        kl_loss = model.KL_loss()
         return kl_loss / model.training_size - log_likelihood_loss
 
 
@@ -322,7 +323,7 @@ class MultiheadMLP(nn.Module):
         super().__init__()
         self.backbone_dims = [input_dim] + hidden_dims
         self.layers = nn.ModuleList()
-        for i in range(len(self.dims) - 1):
+        for i in range(len(self.backbone_dims) - 1):
             self.layers.append(nn.Linear(self.backbone_dims[i], self.backbone_dims[i+1]))
         self.heads = nn.ModuleList([nn.Linear(self.backbone_dims[-1], output_dim) for _ in range(n_heads)])
     
@@ -344,12 +345,12 @@ class MultiheadMLP(nn.Module):
             epoch_loss = 0
             for batch_id in range(max_batches):
                 losses = []
-                for dataloader in dataloaders:
+                for task_id, dataloader in enumerate(dataloaders):
                     if batch_id < len(dataloader):
                         batch_X, batch_y = next(iter(dataloader))
                         optimizer.zero_grad()
-                        outputs = self(batch_X)
-                        loss = self.loss_function(outputs, batch_y)
+                        outputs = self(batch_X, task_id)
+                        loss = torch.nn.functional.cross_entropy(outputs, torch.argmax(batch_y, dim=1))
                         loss.backward()
                         losses.append(loss.item())
                 if losses:

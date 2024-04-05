@@ -2,3 +2,4 @@ test.py
 data/
 .vscode/
 __pycache__/
+results/

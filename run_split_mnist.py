@@ -2,9 +2,11 @@ from datasets import SplitMnist
 import torch
 import coreset
 import vcl
+import baseline
 import numpy as np
 from utils import plot
 import time
+import os
 
 print('Running VCL')
 torch.manual_seed(0)
@@ -40,15 +42,13 @@ print("Running naive baseline")
 torch.manual_seed(0)
 data_class.reset()
 start = time.time()
-naive_baseline_result = vcl.run_baseline(hidden_dimensions, n_epochs, data_class, coreset.random_coreset, coreset_size, batch_size, shared_head)
+naive_baseline_result = baseline.run_baseline(hidden_dimensions, n_epochs, data_class, batch_size, shared_head)
 end = time.time()
 print("Naive baseline result: ", naive_baseline_result)
 print('Time taken for naive baseline: ', end-start)
 naive_baseline_means = [np.mean(r) for r in naive_baseline_result]
 
-
-
-
-plot('results/split_mnist_vcl.png', vcl_means, naive_baseline_means, naive_baseline_means)
+os.makedirs('results', exist_ok=True)
+plot('results/split_mnist_vcl.png', [vcl_means, naive_baseline_means], ['VCL', 'Naive Baseline'])
 
 

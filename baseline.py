@@ -1,7 +1,7 @@
 
 from models import MultiheadMLP
 
-def run_baseline(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, batch_size=264, shared_head=True):
+def run_baseline(hidden_dims, n_epochs, data_class, batch_size=264, shared_head=True):
     input_dim, out_dim = data_class.get_dims()
     task_accuracies = []
     X_train_by_task, y_train_by_task = [], []
@@ -16,8 +16,10 @@ def run_baseline(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0
         y_test_by_task.append(y_test)
 
         head = 0 if shared_head else task_id
-
-        model = MultiheadMLP(input_dim, hidden_dims, out_dim, shared_head)
+        if(shared_head):
+            raise NotImplementedError("Shared head not implemented for baseline")
+        else:
+            model = MultiheadMLP(input_dim, hidden_dims, out_dim, data_class.n_tasks)
         model.train(X_train_by_task, y_train_by_task, n_epochs, batch_size)
         accuracies = model.evaluate(X_test_by_task, y_test_by_task)
         task_accuracies.append(accuracies)
