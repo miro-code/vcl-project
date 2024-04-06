@@ -173,8 +173,8 @@ class BNN(NN):
         prediction = self._predict(inputs, task_id, self.n_train_samples)
         loss = 0
         for i in range(self.n_train_samples):
-            loss += nn.functional.cross_entropy(prediction[i], targets)
-        return loss
+            loss += nn.functional.cross_entropy(prediction[i], targets, reduction="sum")
+        return loss / self.n_train_samples
 
     def KL_loss(self, task_id):
         #For some reason the original code chooses to calculate KL for ALL prediction heads. So all of them are trained towards the prior at which they already are. I will just leave that out for now. 
@@ -189,13 +189,13 @@ class BNN(NN):
         #that will lead to strange behavior for coreset scenario where the model is trained for the next task and the KL term trains there previous tasks prediction head towards its last state
         return loss
     
-    def calculate_loss(model, inputs, targets, task_id):
-        #compute elboloss and regularize KL divergence by scaling with the training size
-        log_likelihood_loss = model.log_likelihood_loss(inputs, targets, task_id)
-        kl_loss = model.KL_loss(task_id)
+    def calculate_loss(self, inputs, targets, task_id):
+        #compute elboloss and regularize KL divergence by scaling with the training size (as in the original implementation)
+        log_likelihood_loss = self.log_likelihood_loss(inputs, targets, task_id)
+        kl_loss = self.KL_loss(task_id)
         #TODO
         #return log_likelihood_loss
-        return kl_loss / model.training_size - log_likelihood_loss
+        return kl_loss / self.training_size + log_likelihood_loss
 
 
     def init_weights(self, previous_means, previous_log_variances):
@@ -343,22 +343,21 @@ class MultiheadMLP(nn.Module):
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         display_epoch = 5
         result = []
-        max_batches = max(len(loader) for loader in dataloaders)
+        num_batches_by_task = [len(loader) for loader in dataloaders]
+        max_batches = max(num_batches_by_task)
         for epoch in range(n_epochs):
             epoch_loss = 0
             for batch_id in range(max_batches):
-                losses = []
+                batch_loss = 0
                 for task_id, dataloader in enumerate(dataloaders):
-                    if batch_id < len(dataloader):
-                        batch_X, batch_y = next(iter(dataloader))
-                        optimizer.zero_grad()
-                        outputs = self(batch_X, task_id)
-                        loss = torch.nn.functional.cross_entropy(outputs, torch.argmax(batch_y, dim=1))
-                        loss.backward()
-                        losses.append(loss.item())
-                if losses:
-                    epoch_loss += sum(losses) / len(losses)
-                    optimizer.step()
+                    batch_X, batch_y = next(iter(dataloader))
+                    optimizer.zero_grad()
+                    outputs = self(batch_X, task_id)
+                    loss = torch.nn.functional.cross_entropy(outputs, torch.argmax(batch_y, dim=1))
+                    batch_loss += loss
+                batch_loss.backward()
+                optimizer.step()
+                epoch_loss += batch_loss.item()
             result.append(epoch_loss)
 
             if epoch % display_epoch == 0:
