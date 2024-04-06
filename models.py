@@ -74,7 +74,7 @@ class MLP(NN):
         self.weights, self.biases, self.weights_last, self.biases_last = self.init_weights()
         self.params = nn.ParameterList([nn.ParameterList([self.weights, self.biases, self.weights_last, self.biases_last]), None])
 
-    def predict(self, inputs, task_id):
+    def _predict(self, inputs, task_id):
         activations = inputs
         for i in range(len(self.hidden_dims)):
             weights = self.weights[i]
@@ -85,11 +85,14 @@ class MLP(NN):
         return logits
 
     def calculate_loss(self, X_batch, y_batch, task_id):
-        logits = self.predict(X_batch, task_id)
+        logits = self._predict(X_batch, task_id)
         return nn.functional.cross_entropy(logits, y_batch)
 
     def predict_proba(self, X_test, task_id):
-        return nn.functional.softmax(self.predict(X_test, task_id), dim=1)
+        return nn.functional.softmax(self._predict(X_test, task_id), dim=1)
+    
+    def predict(self, X_test, task_id):
+        return torch.argmax(self.predict_proba(X_test, task_id), dim=1)
 
     def init_weights(self):
         self.layer_dims = deepcopy(self.hidden_dims)
@@ -133,11 +136,12 @@ class BNN(NN):
         self.n_pred_samples = n_pred_samples
 
     def predict(self, inputs, task_id):
-        return self._predict(inputs, task_id, self.n_pred_samples)
+        return torch.argmax(self.predict_proba(inputs, task_id), dim=1)
     
     def predict_proba(self, X_test, task_id):
-        return nn.functional.softmax(self.predict(X_test, task_id), dim=2)
-    
+        sampled_logits = self._predict(X_test, task_id, self.n_pred_samples)
+        probabilities = nn.functional.softmax(sampled_logits, dim=2)
+        return torch.mean(probabilities, dim=0)    
 
     def _predict(self, inputs, task_id, n_samples):
         expanded_inputs = inputs.unsqueeze(0) #size: 1 x batch_size x input_dim = 1 x 64 x 784
@@ -166,10 +170,11 @@ class BNN(NN):
         return logits
 
     def log_likelihood_loss(self, inputs, targets, task_id):
-        prediction = self._predict(inputs, task_id, self.n_train_samples) #TODO: Why is this n_train_samples?
-        targets = targets.unsqueeze(0).repeat(self.n_train_samples, 1, 1)
-        log_likelihood = nn.functional.cross_entropy(prediction, targets)
-        return log_likelihood
+        prediction = self._predict(inputs, task_id, self.n_train_samples)
+        loss = 0
+        for i in range(self.n_train_samples):
+            loss += nn.functional.cross_entropy(prediction[i], targets)
+        return loss
 
     def KL_loss(self):
         #For some reason the original code chooses to calculate KL for ALL prediction heads. So all of them are trained towards the prior at which they already are. I will just leave that out for now. 

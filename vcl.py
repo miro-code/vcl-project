@@ -37,10 +37,9 @@ def get_results(model, X_test_by_task, y_test_by_task, X_cs_by_task, y_cs_by_tas
         head = 0 if shared_head else i
         x_test, y_test = X_test_by_task[i], y_test_by_task[i]
         predictions = final_model.predict_proba(x_test, head)
-        prediction_mean = torch.mean(predictions, axis=0)
-        prediction = torch.argmax(prediction_mean, axis=1)
+        predictions = torch.argmax(predictions, axis=1)
         y = torch.argmax(y_test, axis=1)
-        accuracy = torch.sum(prediction == y).item() / y.shape[0]
+        accuracy = torch.sum(predictions == y).item() / y.shape[0]
         accuracies.append(accuracy)
     return accuracies
 
@@ -67,6 +66,11 @@ def run_vcl(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, bat
         if coreset_size > 0:
             X_cs_by_task, y_cs_by_task, X_train, y_train = coreset_func(X_cs_by_task, y_cs_by_task, X_train, y_train, coreset_size)
         bnn = BNN(input_dim, hidden_dims, out_dim, X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances)
+        #TODO:remove debugging
+        bnn.X_test = X_test
+        bnn.y_test = y_test
+        #TODO:remove debugging
+        
         bnn.train(X_train, y_train, head, n_epochs, batch_size)
         parameter_means, parameter_variances = bnn.get_parameters()
 
