@@ -20,6 +20,7 @@ class SplitMnist():
 
         self.labels_0 = [0, 2, 4, 6, 8]
         self.labels_1 = [1, 3, 5, 7, 9]
+
         self.current_task = 0
         self.n_tasks = len(self.labels_0)
 
@@ -54,3 +55,40 @@ class SplitMnist():
     def reset(self):
         self.current_task = 0
     
+
+class PermutedMnist():
+    def __init__(self, n_tasks=10):
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,)),
+        ])
+        mnist_train = torchvision.datasets.MNIST(root='./data', train=True, download=True, transform=transform)
+        mnist_test = torchvision.datasets.MNIST(root='./data', train=False, download=True, transform=transform)
+
+        #flatten the image
+        self.X_train = torch.stack([sample[0].view(-1) for sample in mnist_train])
+        self.X_test = torch.stack([sample[0].view(-1) for sample in mnist_test])
+        self.train_label = torch.tensor([sample[1] for sample in mnist_train])
+        self.test_label = torch.tensor([sample[1] for sample in mnist_test])
+
+        self.n_tasks = n_tasks
+        self.current_task = 0
+
+        self.permutations = []
+        for _ in range(n_tasks):
+            self.permutations.append(torch.randperm(784))
+
+    def get_dims(self):
+        return 784, 10
+
+    def next_task(self):
+        if self.current_task >= self.n_tasks:
+            raise Exception('All tasks are already completed')
+        else:
+            X_train = self.X_train.detach().clone()[self.permutations[self.current_task]]
+            y_train = self.y_train.detach().clone()
+            X_test = self.X_test.detach().clone()[self.permutations[self.current_task]]
+            y_test = self.y_test.detach().clone()
+
+            self.current_task += 1
+        return X_train, y_train, X_test, y_test
