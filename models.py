@@ -191,6 +191,8 @@ class BNN(NN):
         #compute elboloss and regularize KL divergence by scaling with the training size
         log_likelihood_loss = model.log_likelihood_loss(inputs, targets, task_id)
         kl_loss = model.KL_loss()
+        #TODO
+        #return log_likelihood_loss
         return kl_loss / model.training_size - log_likelihood_loss
 
 
@@ -273,40 +275,34 @@ class BNN(NN):
         weight_last_variances = []
         bias_last_variances = []
         
-        for i in range(n_layers - 1):
-            if(previous_variances is not None and previous_means is not None):
-                weight_mean = previous_means[0][i]
-                bias_mean = previous_means[1][i]
-                weight_variance = previous_variances[0][i]
-                bias_variance = previous_variances[1][i]
-            else:
-                weight_mean = prior_mean
-                bias_mean = prior_mean
-                weight_variance = prior_var
-                bias_variance = prior_var
-            weight_means.append(weight_mean)
-            bias_means.append(bias_mean)
-            weight_variances.append(weight_variance)
-            bias_variances.append(bias_variance)
-
         if(previous_variances is not None and previous_means is not None):
-            previous_weight_last_means = previous_means[2]
-            previous_bias_last_means = previous_means[3]
-            previous_weight_last_variances = previous_variances[2]
-            previous_bias_last_variances = previous_variances[3]
-            n_previous_tasks = len(previous_weight_last_means)
-            for i in range(n_previous_tasks):
-                weight_last_means.append(previous_weight_last_means[i])
-                bias_last_means.append(previous_bias_last_means[i])
-                weight_last_variances.append(previous_weight_last_variances[i])
-                bias_last_variances.append(previous_bias_last_variances[i])
+        #if the previous model has been  trained with VI already
+        #note that when initialising with MLP weights we still use prior 0 for all weights
+            for i in range(n_layers - 1):
+                weight_means.append(previous_means[0][i].detach().clone())
+                bias_means.append(previous_means[1][i].detach().clone())
+                weight_variances.append(previous_variances[0][i].detach().clone())
+                bias_variances.append(previous_variances[1][i].detach().clone())
+
+                n_previous_tasks = len(previous_means[2])
+                for i in range(n_previous_tasks):
+                    weight_last_means.append(previous_means[2][i].detach().clone())
+                    bias_last_means.append(previous_means[3][i].detach().clone())
+                    weight_last_variances.append(previous_variances[2][i].detach().clone())
+                    bias_last_variances.append(previous_variances[3][i].detach().clone())
         else:
+            for i in range(n_layers - 1):
+                weight_means.append(prior_mean)
+                bias_means.append(prior_mean)
+                weight_variances.append(prior_var)
+                bias_variances.append(prior_var)
+            
             weight_last_means.append(prior_mean)
             bias_last_means.append(prior_mean)
             weight_last_variances.append(prior_var)
             bias_last_variances.append(prior_var)
+        
         return [weight_means, bias_means, weight_last_means, bias_last_means], [weight_variances, bias_variances, weight_last_variances, bias_last_variances]
-    
 
 class BaselineMLP(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
