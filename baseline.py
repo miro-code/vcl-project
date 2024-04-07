@@ -1,5 +1,5 @@
 
-from models import MultiheadMLP
+from models import MultiheadMLP, SingleHeadMLP
 import time
 
 def run_baseline(hidden_dims, n_epochs, data_class, batch_size=264, shared_head=True):
@@ -18,7 +18,7 @@ def run_baseline(hidden_dims, n_epochs, data_class, batch_size=264, shared_head=
         y_test_by_task.append(y_test)
 
         if(shared_head):
-            raise NotImplementedError("Shared head not implemented for baseline")
+            model = SingleHeadMLP(input_dim, hidden_dims, out_dim)
         else:
             model = MultiheadMLP(input_dim, hidden_dims, out_dim, data_class.n_tasks)
         start = time.time()

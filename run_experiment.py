@@ -39,7 +39,7 @@ def run_experiment(dataset, method, seed):
     elif(method == 'k_center'):
         result, training_times = vcl.run_vcl(hidden_dimensions, n_epochs, data_class, coreset.k_center, 40, batch_size, shared_head)
     elif(method == 'baseline'):
-        result, training_times = baseline.run_baseline(hidden_dimensions, n_epochs, data_class, batch_size)
+        result, training_times = baseline.run_baseline(hidden_dimensions, n_epochs, data_class, batch_size, shared_head)
     
     print("Result: ", result)
     print("Training times: ", training_times)
