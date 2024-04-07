@@ -68,8 +68,8 @@ class PermutedMnist():
         #flatten the image
         self.X_train = torch.stack([sample[0].view(-1) for sample in mnist_train])
         self.X_test = torch.stack([sample[0].view(-1) for sample in mnist_test])
-        self.train_label = torch.tensor([sample[1] for sample in mnist_train])
-        self.test_label = torch.tensor([sample[1] for sample in mnist_test])
+        self.y_train = torch.tensor([sample[1] for sample in mnist_train])
+        self.y_test = torch.tensor([sample[1] for sample in mnist_test])
 
         self.n_tasks = n_tasks
         self.current_task = 0
@@ -85,10 +85,17 @@ class PermutedMnist():
         if self.current_task >= self.n_tasks:
             raise Exception('All tasks are already completed')
         else:
-            X_train = self.X_train.detach().clone()[self.permutations[self.current_task]]
+            X_train = self.X_train.detach().clone()[:, self.permutations[self.current_task]]
             y_train = self.y_train.detach().clone()
-            X_test = self.X_test.detach().clone()[self.permutations[self.current_task]]
+            X_test = self.X_test.detach().clone()[:, self.permutations[self.current_task]]
             y_test = self.y_test.detach().clone()
-
+            y_train = torch.nn.functional.one_hot(y_train, num_classes=10).float()
+            y_test = torch.nn.functional.one_hot(y_test, num_classes=10).float()
+            
             self.current_task += 1
         return X_train, y_train, X_test, y_test
+    
+    def reset(self):
+        self.current_task = 0
+
+

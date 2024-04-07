@@ -193,8 +193,6 @@ class BNN(NN):
         #compute elboloss and regularize KL divergence by scaling with the training size (as in the original implementation)
         log_likelihood_loss = self.log_likelihood_loss(inputs, targets, task_id)
         kl_loss = self.KL_loss(task_id)
-        #TODO
-        #return log_likelihood_loss
         return kl_loss / self.training_size + log_likelihood_loss
 
 

@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import utils
 from models import MLP, BNN
 
 
@@ -17,7 +16,7 @@ def get_results(model, X_test_by_task, y_test_by_task, X_cs_by_task, y_cs_by_tas
             y_train = torch.cat(y_cs_by_task, dim=0)
             #TODO: Does this mean that when training on the coreset data, each task gets different backbone weights?
             #It seems information on which task the data belongs to is also passed to the model
-            final_model = BNN(X_train.shape[1], hidden_size, y_train.shape[1], X_train.shape[0], previous_means=parameter_means, prev_log_variances=parameter_variances)
+            final_model = BNN(X_train.shape[1], hidden_size, y_train.shape[1], X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances)
             final_model.train(X_train, y_train, 0, n_epochs, batch_size)
         else:
             final_model = model
