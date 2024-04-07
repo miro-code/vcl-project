@@ -304,12 +304,12 @@ class BNN(NN):
         
         return [weight_means, bias_means, weight_last_means, bias_last_means], [weight_variances, bias_variances, weight_last_variances, bias_last_variances]
 
-class BaselineMLP(nn.Module):
+class SingleHeadMLP(nn.Module):
     def __init__(self, input_dim, hidden_dims, output_dim):
         super().__init__()
         self.backbone_dims = [input_dim] + hidden_dims
         self.layers = nn.ModuleList()
-        for i in range(len(self.dims) - 1):
+        for i in range(len(self.backbone_dims) - 1):
             self.layers.append(nn.Linear(self.backbone_dims[i], self.backbone_dims[i+1]))
         self.head = nn.Linear(self.backbone_dims[-1], output_dim)
     
@@ -317,6 +317,40 @@ class BaselineMLP(nn.Module):
         for layer in self.layers:
             x = torch.relu(layer(x))
         return self.head(x)
+    
+    def train(self, X_train_by_task, y_train_by_task, n_epochs, batch_size, lr=0.001):
+        #merge all tasks into one dataset
+        X_train = torch.cat(X_train_by_task, dim=0)
+        y_train = torch.cat(y_train_by_task, dim=0)
+        dataset = TensorDataset(X_train, y_train)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        display_epoch = 5
+        result = []
+        for epoch in range(n_epochs):
+            epoch_loss = 0
+            for X_batch, y_batch in dataloader:
+                optimizer.zero_grad()
+                outputs = self(X_batch)
+                loss = torch.nn.functional.cross_entropy(outputs, torch.argmax(y_batch, dim=1))
+                loss.backward()
+                optimizer.step()
+                epoch_loss += loss.item()
+            result.append(epoch_loss)
+            if epoch % display_epoch == 0:
+                print(f'Epoch {epoch} Loss: {epoch_loss:.4f}')
+        return result
+    
+    def evaluate(self, X_test_by_task, y_test_by_task):
+        accuracies = []
+        for i in range(len(X_test_by_task)):
+            X_test, y_test = X_test_by_task[i], y_test_by_task[i]
+            predictions = self(X_test)
+            prediction = torch.argmax(predictions, dim=1)
+            y = torch.argmax(y_test, dim=1)
+            accuracy = torch.sum(prediction == y).item() / y.shape[0]
+            accuracies.append(accuracy)
+        return accuracies
     
 
 class MultiheadMLP(nn.Module):
