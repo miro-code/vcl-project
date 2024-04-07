@@ -62,6 +62,6 @@ print('Time taken for naive baseline: ', end-start)
 naive_baseline_means = [np.mean(r) for r in naive_baseline_result]
 
 os.makedirs('results', exist_ok=True)
-plot('results/split_mnist_vcl.png', [vcl_means, naive_baseline_means], ['VCL', 'Naive Baseline'])
+plot('results/split_mnist_vcl.png', [vcl_means, naive_baseline_means, kc_vcl_means, rc_vcl_means], ['VCL', 'Naive Baseline', 'K Center VCL', 'Random Coreset VCL'])
 
 

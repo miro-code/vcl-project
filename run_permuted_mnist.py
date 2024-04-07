@@ -20,27 +20,23 @@ n_tasks = 5
 torch.manual_seed(0)
 coreset_size = 0
 data_gen = PermutedMnist(n_tasks)
-vcl_result = vcl.run_vcl(hidden_size, n_epochs, data_gen, 
-    coreset.random_coreset, coreset_size, batch_size, shared_head)
+vcl_result = vcl.run_vcl(hidden_size, n_epochs, data_gen, coreset.random_coreset, coreset_size, batch_size, shared_head)
 print(vcl_result)
-
+vcl_mean = [np.mean(r) for r in vcl_result]
 
 torch.manual_seed(0)
 coreset_size = 200
 data_gen = PermutedMnist(n_tasks)
-random_coreset_result = vcl.run_vcl(hidden_size, n_epochs, data_gen, 
-    coreset.random_coreset, coreset_size, batch_size, shared_head)
+random_coreset_result = vcl.run_vcl(hidden_size, n_epochs, data_gen,coreset.random_coreset, coreset_size, batch_size, shared_head)
 print(random_coreset_result)
+rc_vcl_mean = [np.mean(r) for r in random_coreset_result]
 
 
 
 data_gen = PermutedMnist(n_tasks)
-k_center_coreset_result = vcl.run_vcl(hidden_size, n_epochs, data_gen, 
-    coreset.k_center, coreset_size, batch_size, shared_head)
+k_center_coreset_result = vcl.run_vcl(hidden_size, n_epochs, data_gen, coreset.k_center, coreset_size, batch_size, shared_head)
 print(k_center_coreset_result)
+kc_vcl_mean = [np.mean(r) for r in k_center_coreset_result]
 
-# Plot average accuracy
-vcl_avg = torch.nanmean(vcl_result, 1)
-rand_vcl_avg = torch.nanmean(random_coreset_result, 1)
-kcen_vcl_avg = torch.nanmean(k_center_coreset_result, 1)
-plot('results/permuted.jpg', vcl_avg, rand_vcl_avg, kcen_vcl_avg)
+os.makedirs('results', exist_ok=True)
+plot('results/permuted.jpg', vcl_mean, rc_vcl_mean, kc_vcl_mean, 'VCL', 'Random Coreset VCL', 'K Center Coreset VCL')
