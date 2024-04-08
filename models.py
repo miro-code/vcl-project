@@ -116,11 +116,12 @@ class MLP(NN):
         return weights, biases, weights_last, biases_last
 
 class BNN(NN):
-    def __init__(self, input_dim, hidden_dims, output_dim, training_size, n_train_samples=10, n_pred_samples = 100, previous_means=None, previous_log_variances=None, lr=0.001, prior_mean=torch.tensor(0), prior_var=torch.tensor(1)):
+    def __init__(self, input_dim, hidden_dims, output_dim, training_size, n_train_samples=10, n_pred_samples = 100, previous_means=None, previous_log_variances=None, lr=0.001, prior_mean=torch.tensor(0), prior_var=torch.tensor(1), shared_head=False):
         #previous means is supplied as [weight_means, bias_means, weight_last_means, bias_last_means]
         #previous log variances is supplied equivalently
         #Note that variances are provided as log(variances)
         super().__init__(input_dim, hidden_dims, output_dim, n_train_samples)
+        self.shared_head = shared_head
         means, variances = self.init_weights(previous_means, previous_log_variances)
         self.weight_means, self.bias_means, self.weight_last_means, self.bias_last_means = means
         self.weight_variances, self.bias_variances, self.weight_last_variances, self.bias_last_variances = variances
@@ -238,25 +239,29 @@ class BNN(NN):
             bias_variances.append(bias_variance)
         
         if(previous_log_variances is not None and previous_means is not None):
-            previous_weight_last_means = previous_means[2]
-            previous_bias_last_means = previous_means[3]
-            previous_weight_last_variances = previous_log_variances[2]
-            previous_bias_last_variances = previous_log_variances[3]
-            n_previous_tasks = len(previous_weight_last_means)
-            for i in range(n_previous_tasks):
-                weight_last_means.append(nn.Parameter(previous_weight_last_means[i]))
-                bias_last_means.append(nn.Parameter(previous_bias_last_means[i]))
-                weight_last_variances.append(nn.Parameter(previous_weight_last_variances[i]))
-                bias_last_variances.append(nn.Parameter(previous_bias_last_variances[i]))
+            n_previous_heads = len(previous_means[2])
+            for i in range(n_previous_heads):
+                weight_last_means.append(nn.Parameter(previous_means[2][i]))
+                bias_last_means.append(nn.Parameter(previous_means[3][i]))
+                weight_last_variances.append(nn.Parameter(previous_log_variances[2][i]))
+                bias_last_variances.append(nn.Parameter(previous_log_variances[3][i]))
         
-        if(previous_log_variances is None and previous_means is not None):
-            weight_last_means.append(nn.Parameter(previous_means[2][0]))
-            bias_last_means.append(nn.Parameter(previous_means[3][0]))
+        if(not self.shared_head):
+            if(previous_log_variances is None and previous_means is not None):
+                weight_last_means.append(nn.Parameter(previous_means[2][0]))
+                bias_last_means.append(nn.Parameter(previous_means[3][0]))
+            else:
+                weight_last_means.append(weight_parameter((self.layer_dims[-2], self.layer_dims[-1])))
+                bias_last_means.append(bias_parameter((self.layer_dims[-1],)))
+            weight_last_variances.append(small_parameter((self.layer_dims[-2], self.layer_dims[-1])))
+            bias_last_variances.append(small_parameter((self.layer_dims[-1],)))
         else:
-            weight_last_means.append(weight_parameter((self.layer_dims[-2], self.layer_dims[-1])))
-            bias_last_means.append(bias_parameter((self.layer_dims[-1],)))
-        weight_last_variances.append(small_parameter((self.layer_dims[-2], self.layer_dims[-1])))
-        bias_last_variances.append(small_parameter((self.layer_dims[-1],)))
+            if(previous_log_variances is None and previous_means is not None):
+                weight_last_means.append(nn.Parameter(previous_means[2][0]))
+                bias_last_means.append(nn.Parameter(previous_means[3][0]))
+                weight_last_variances.append(small_parameter((self.layer_dims[-2], self.layer_dims[-1])))
+                bias_last_variances.append(small_parameter((self.layer_dims[-1],)))
+
         return [weight_means, bias_means, weight_last_means, bias_last_means], [weight_variances, bias_variances, weight_last_variances, bias_last_variances]
 
     def create_prior(self, previous_means, previous_variances, prior_mean, prior_var):
@@ -284,8 +289,8 @@ class BNN(NN):
                 weight_variances.append(previous_variances[0][i].detach().clone())
                 bias_variances.append(previous_variances[1][i].detach().clone())
 
-            n_previous_tasks = len(previous_means[2])
-            for i in range(n_previous_tasks):
+            n_previous_heads = len(previous_means[2])
+            for i in range(n_previous_heads):
                 weight_last_means.append(previous_means[2][i].detach().clone())
                 bias_last_means.append(previous_means[3][i].detach().clone())
                 weight_last_variances.append(previous_variances[2][i].detach().clone())
@@ -296,11 +301,17 @@ class BNN(NN):
                 bias_means.append(prior_mean)
                 weight_variances.append(prior_var)
                 bias_variances.append(prior_var)
-            
-        weight_last_means.append(prior_mean)
-        bias_last_means.append(prior_mean)
-        weight_last_variances.append(prior_var)
-        bias_last_variances.append(prior_var)
+        if(not self.shared_head):
+            weight_last_means.append(prior_mean)
+            bias_last_means.append(prior_mean)
+            weight_last_variances.append(prior_var)
+            bias_last_variances.append(prior_var)
+        else:
+            if(previous_variances is None):
+                weight_last_means.append(prior_mean)
+                bias_last_means.append(prior_mean)
+                weight_last_variances.append(prior_var)
+                bias_last_variances.append(prior_var)
         
         return [weight_means, bias_means, weight_last_means, bias_last_means], [weight_variances, bias_variances, weight_last_variances, bias_last_variances]
 

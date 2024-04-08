@@ -31,7 +31,6 @@ def plot_general(x, ys, errors, labels, title, xlabel, ylabel, filename):
 
 
 def plot_average_accuracy(dataset, methods):
-    """Plot the average accuracy across all tasks for each method, including error bars."""
     avg_accuracies = []
     accuracies_std = []
     labels = []
@@ -59,11 +58,11 @@ def plot_task_accuracy(dataset, methods, task_index):
         
         for seed in range(5):
             result, _ = load_result(dataset, method, seed)
-            task_accuracies = [step_acc[task_index] if len(step_acc) >= task_index else None for step_acc in result]
+            task_accuracies = [step_acc[task_index] if len(step_acc) > task_index else np.nan for step_acc in result]
             task_accuracies_across_seeds.append(task_accuracies)
         
-        mean_accuracies = [np.mean(step) if step is not None else None for step in task_accuracies_across_seeds]
-        stddev_accuracies = [np.std(step) if step is not None else None for step in task_accuracies_across_seeds]
+        mean_accuracies = [np.nanmean(step) if step is not None else None for step in task_accuracies_across_seeds]
+        stddev_accuracies = [np.nanstd(step) if step is not None else None for step in task_accuracies_across_seeds]
         
         accuracies_by_method.append(mean_accuracies)
         accuracies_std_by_method.append(stddev_accuracies)
@@ -74,7 +73,6 @@ def plot_task_accuracy(dataset, methods, task_index):
     plot_general(steps, accuracies_by_method, accuracies_std_by_method, labels, f'Accuracy for Task {task_index+1} - {dataset}', 'Learning Step', 'Accuracy', filename)
 
 def plot_cumulative_training_time(dataset, methods):
-    """Plot the cumulative training time for each dataset and method."""
     cumulative_times_by_method = []
     labels = []
     

@@ -25,7 +25,7 @@ def run_experiment(dataset, method, seed):
         hidden_dimensions = [256, 256]
         n_epochs = 120
     elif dataset == 'permuted_mnist':
-        data_class = PermutedMnist(5)
+        data_class = PermutedMnist(10)
         shared_head = True
         hidden_dimensions = [100, 100]
         n_epochs = 100

@@ -17,7 +17,7 @@ def get_results(model, X_test_by_task, y_test_by_task, X_cs_by_task, y_cs_by_tas
             y_train = torch.cat(y_cs_by_task, dim=0)
             #TODO: Does this mean that when training on the coreset data, each task gets different backbone weights?
             #It seems information on which task the data belongs to is also passed to the model
-            final_model = BNN(X_train.shape[1], hidden_size, y_train.shape[1], X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances)
+            final_model = BNN(X_train.shape[1], hidden_size, y_train.shape[1], X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances, shared_head=True)
             start = time.time()
             final_model.train(X_train, y_train, 0, n_epochs, batch_size)
             end = time.time()
@@ -29,7 +29,7 @@ def get_results(model, X_test_by_task, y_test_by_task, X_cs_by_task, y_cs_by_tas
         for i in range(len(X_test_by_task)):
             if X_cs_by_task:
                 X_train, y_train = X_cs_by_task[i], y_cs_by_task[i]
-                final_model = BNN(X_train.shape[1], hidden_size, y_train.shape[1], X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances)
+                final_model = BNN(X_train.shape[1], hidden_size, y_train.shape[1], X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances, shared_head=False)
                 start = time.time()
                 final_model.train(X_train, y_train, i, n_epochs, batch_size)
                 end = time.time()
@@ -74,7 +74,7 @@ def run_vcl(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, bat
         
         if coreset_size > 0:
             X_cs_by_task, y_cs_by_task, X_train, y_train = coreset_func(X_cs_by_task, y_cs_by_task, X_train, y_train, coreset_size)
-        bnn = BNN(input_dim, hidden_dims, out_dim, X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances)
+        bnn = BNN(input_dim, hidden_dims, out_dim, X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances, shared_head=shared_head)
         #TODO:remove debugging
         bnn.X_test = X_test
         bnn.y_test = y_test
