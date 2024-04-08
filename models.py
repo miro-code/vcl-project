@@ -7,7 +7,6 @@ torch.manual_seed(0)
 #TODO: Questions - whats up with the difference between n_train_samples and n_pred_samples?
 # - why do they init with a MLE model?
 # - How did they choose to regularize the KL divergence with the training size?
-# - TODO: Check var vs logvar 
 # - For the first task the mlp model is trained and then the coreset samples are selected. The baysian model are trained without the coreset samples
 
 # parameter initionalisations
@@ -153,7 +152,7 @@ class BNN(NN):
             weight_epsilon = torch.randn(n_samples, input_dim, output_dim) #size: n_pred_samples x input_dim x output_dim
             bias_epsilon = torch.randn(n_samples, 1, output_dim) #size: n_pred_samples x 1 x output_dim
             #we use * 0.5 for the reparameterisation trick: taking the square root of the variance is the std
-            weights = weight_epsilon * torch.exp(0.5 * self.weight_variances[i]) + self.weight_means[i] #size: TODO:(?) n_pred_samples x batch_size x output_dim 
+            weights = weight_epsilon * torch.exp(0.5 * self.weight_variances[i]) + self.weight_means[i]  
             biases = bias_epsilon * torch.exp(0.5 * self.bias_variances[i]) + self.bias_means[i]
             raw_activations = torch.matmul(activations, weights) + biases 
             activations = torch.relu(raw_activations) 
@@ -194,7 +193,7 @@ class BNN(NN):
         #compute elboloss and regularize KL divergence by scaling with the training size (as in the original implementation)
         log_likelihood_loss = self.log_likelihood_loss(inputs, targets, task_id)
         kl_loss = self.KL_loss(task_id)
-        return kl_loss / self.training_size + log_likelihood_loss
+        return kl_loss / inputs.shape[0] + log_likelihood_loss
 
 
     def init_weights(self, previous_means, previous_log_variances):
@@ -217,7 +216,7 @@ class BNN(NN):
         self.layer_dims.append(self.output_dim)
         self.layer_dims.insert(0, self.input_dim)
         n_layers = len(self.layer_dims) - 1
-        
+
         for i in range(n_layers - 1):
             if previous_means is None:
                 weight_mean = weight_parameter((self.layer_dims[i], self.layer_dims[i+1]))

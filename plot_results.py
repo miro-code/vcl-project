@@ -19,7 +19,8 @@ def load_result(dataset, method, seed):
 def plot_general(x, ys, errors, labels, title, xlabel, ylabel, filename):
     plt.figure()
     for y, error, label in zip(ys, errors, labels):
-        plt.errorbar(x, y, yerr=error, label=label, fmt='o', capsize=5)
+        plt.errorbar(x, y, yerr=error, label=label, fmt='-o', capsize=5)
+    plt.xticks(x)
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
@@ -61,8 +62,8 @@ def plot_task_accuracy(dataset, methods, task_index):
             task_accuracies = [step_acc[task_index] if len(step_acc) > task_index else np.nan for step_acc in result]
             task_accuracies_across_seeds.append(task_accuracies)
         
-        mean_accuracies = [np.nanmean(step) if step is not None else None for step in task_accuracies_across_seeds]
-        stddev_accuracies = [np.nanstd(step) if step is not None else None for step in task_accuracies_across_seeds]
+        mean_accuracies = np.nanmean(task_accuracies_across_seeds, axis=0)
+        stddev_accuracies = np.nanstd(task_accuracies_across_seeds, axis=0)
         
         accuracies_by_method.append(mean_accuracies)
         accuracies_std_by_method.append(stddev_accuracies)
@@ -70,12 +71,12 @@ def plot_task_accuracy(dataset, methods, task_index):
     
     steps = range(1, len(mean_accuracies) + 1)
     filename = f"results/{dataset}_task_{task_index+1}_accuracy.png" 
-    plot_general(steps, accuracies_by_method, accuracies_std_by_method, labels, f'Accuracy for Task {task_index+1} - {dataset}', 'Learning Step', 'Accuracy', filename)
+    plot_general(steps, accuracies_by_method, accuracies_std_by_method, labels, f'Accuracy for Task {task_index+1} - {dataset}', 'Task', 'Accuracy', filename)
 
 def plot_cumulative_training_time(dataset, methods):
     cumulative_times_by_method = []
+    cumulative_times_std_by_method = []
     labels = []
-    
     for method in methods:
         cumulative_times_across_seeds = []
         for seed in range(5):
@@ -85,17 +86,22 @@ def plot_cumulative_training_time(dataset, methods):
         mean_cumulative_times = np.mean(cumulative_times_across_seeds, axis=0)
         stddev_cumulative_times = np.std(cumulative_times_across_seeds, axis=0)
         cumulative_times_by_method.append(mean_cumulative_times)
+        cumulative_times_std_by_method.append(stddev_cumulative_times)
         labels.append(method)
     tasks = range(1, len(mean_cumulative_times) + 1)
     filename = f"results/{dataset}_cumulative_training_time.png"
-    plot_general(tasks, cumulative_times_by_method, [stddev_cumulative_times]*len(methods), labels, f'Cumulative Training Time - {dataset}', 'Task', 'Cumulative Time (s)', filename)
+    plot_general(tasks, cumulative_times_by_method, cumulative_times_std_by_method, labels, f'Cumulative Training Time - {dataset}', 'Task', 'Cumulative Time (s)', filename)
 
 
 if __name__ == '__main__':
     datasets = ['split_notmnist', 'split_mnist', 'permuted_mnist'] 
     methods = ['vcl', 'random_coreset', 'k_center', 'baseline']
     for dataset in datasets:
-        plot_average_accuracy(dataset, methods)
+        #plot_average_accuracy(dataset, methods)
         plot_cumulative_training_time(dataset, methods)
-        for i in range(5):
-            plot_task_accuracy(dataset, methods, i)
+        n_tasks = 5
+        if(dataset == 'permuted_mnist'):
+            n_tasks = 10
+        for i in range(n_tasks):
+            #plot_task_accuracy(dataset, methods, i)
+            pass
