@@ -97,11 +97,11 @@ if __name__ == '__main__':
     datasets = ['split_notmnist', 'split_mnist', 'permuted_mnist'] 
     methods = ['vcl', 'random_coreset', 'k_center', 'baseline']
     for dataset in datasets:
-        #plot_average_accuracy(dataset, methods)
+        plot_average_accuracy(dataset, methods)
         plot_cumulative_training_time(dataset, methods)
         n_tasks = 5
         if(dataset == 'permuted_mnist'):
             n_tasks = 10
         for i in range(n_tasks):
-            #plot_task_accuracy(dataset, methods, i)
-            pass
+            plot_task_accuracy(dataset, methods, i)
+            

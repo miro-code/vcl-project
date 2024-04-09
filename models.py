@@ -115,7 +115,7 @@ class MLP(NN):
         return weights, biases, weights_last, biases_last
 
 class BNN(NN):
-    def __init__(self, input_dim, hidden_dims, output_dim, training_size, n_train_samples=10, n_pred_samples = 100, previous_means=None, previous_log_variances=None, lr=0.001, prior_mean=torch.tensor(0), prior_var=torch.tensor(1), shared_head=False):
+    def __init__(self, input_dim, hidden_dims, output_dim, training_size, n_train_samples=10, n_pred_samples = 100, previous_means=None, previous_log_variances=None, lr=0.001, prior_mean=torch.tensor(0), prior_var=torch.tensor(0), shared_head=False):
         #previous means is supplied as [weight_means, bias_means, weight_last_means, bias_last_means]
         #previous log variances is supplied equivalently
         #Note that variances are provided as log(variances)
