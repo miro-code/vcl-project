@@ -6,7 +6,7 @@ import baseline
 import pickle
 import os
 import sys
-
+import numpy as np
 
 prior_experiments_by_id = [{'prior_log_var': prior_log_var} for prior_log_var in [0.0, 0.2, 0.4, 0.6, 0.8, 1]]
 
@@ -33,7 +33,8 @@ def run_prior_experiment(prior_log_var):
     print("Result: ", result)
     print("Training times: ", training_times)
 
-
+    #print average accuracy on last task
+    print("Average accuracy on last task: ", np.mean(result[-1]))
 if __name__ == '__main__':
     id = int(sys.argv[1])
     experiment = prior_experiments_by_id[id]
