@@ -47,7 +47,7 @@ def get_results(model, X_test_by_task, y_test_by_task, X_cs_by_task, y_cs_by_tas
         accuracies.append(accuracy)
     return accuracies, tuning_time
 
-def run_vcl(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, batch_size=264, shared_head=True):
+def run_vcl(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, batch_size=264, shared_head=True, prior_log_var=torch.tensor(0)):
     input_dim, out_dim = data_class.get_dims()
     task_accuracies = []
     X_test_by_task, y_test_by_task = [], []
@@ -72,7 +72,7 @@ def run_vcl(hidden_dims, n_epochs, data_class, coreset_func, coreset_size=0, bat
         
         if coreset_size > 0:
             X_cs_by_task, y_cs_by_task, X_train, y_train = coreset_func(X_cs_by_task, y_cs_by_task, X_train, y_train, coreset_size)
-        bnn = BNN(input_dim, hidden_dims, out_dim, X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances, shared_head=shared_head)
+        bnn = BNN(input_dim, hidden_dims, out_dim, X_train.shape[0], previous_means=parameter_means, previous_log_variances=parameter_variances, shared_head=shared_head, prior_var=prior_log_var)
         start = time.time()
         bnn.train(X_train, y_train, head, n_epochs, batch_size)
         end = time.time()

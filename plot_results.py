@@ -94,7 +94,7 @@ def plot_cumulative_training_time(dataset, methods):
 
 def plot_datasets_average_accuracy(datasets, methods):
     num_datasets = len(datasets)
-    _, axes = plt.subplots(1, num_datasets, figsize=(5 * num_datasets, 6))
+    _, axes = plt.subplots(1, num_datasets, figsize=(5 * num_datasets, 4))
     
     if num_datasets == 1:  # Ensure axes is iterable
         axes = [axes]
@@ -132,7 +132,7 @@ def plot_datasets_average_accuracy(datasets, methods):
 
 def plot_datasets_cumulative_training_time(datasets, methods):
     num_datasets = len(datasets)
-    fig, axes = plt.subplots(1, num_datasets, figsize=(5 * num_datasets, 6))
+    fig, axes = plt.subplots(1, num_datasets, figsize=(5 * num_datasets, 4))
     
     if num_datasets == 1:  # Ensure axes is iterable
         axes = [axes]
