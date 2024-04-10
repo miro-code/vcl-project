@@ -38,6 +38,6 @@ def run_prior_experiment(prior_log_var):
 if __name__ == '__main__':
     id = int(sys.argv[1])
     experiment = prior_experiments_by_id[id]
-    prior_experiments_by_id(experiment['dataset'], experiment['method'], experiment['seed'])
+    prior_experiments_by_id(experiment['prior_log_var'])
     
     
